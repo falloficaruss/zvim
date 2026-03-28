@@ -1,0 +1,11 @@
+[package]
+name = "zvim-app"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+gpui = "0.2.2"
+zvim-core = { path = "../zvim-core" }
+zvim-editor = { path = "../zvim-editor" }
+zvim-lsp = { path = "../zvim-lsp" }

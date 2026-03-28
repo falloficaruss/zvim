@@ -1,0 +1,9 @@
+[package]
+name = "zvim-editor"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+zvim-core = { path = "../zvim-core" }
+

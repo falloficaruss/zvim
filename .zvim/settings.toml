@@ -1,0 +1,22 @@
+[editor]
+tab_size = 2
+soft_wrap = true
+
+[ui]
+sidebar_visible = true
+show_tabs = true
+
+[ui.theme]
+font_family = "Iosevka ZVIM"
+font_size_px = 15
+
+[keymap]
+modal_editing = true
+leader_key = "space"
+
+[git]
+inline_blame = true
+
+[languages.rust]
+formatter = "cargo fmt"
+format_on_save = true
