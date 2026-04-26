@@ -1,18 +1,34 @@
-use gpui::{div, px, rgb, Application, Context, IntoElement, Render, Window, WindowOptions};
+use std::cell::RefCell;
+use std::rc::Rc;
+
+use gpui::{
+    div, px, rgb, AppContext, Application, Context, IntoElement, ParentElement, Render, Styled,
+    Window, WindowOptions,
+};
 
 use crate::app::{BootstrapError, ZvimApp};
 
 pub fn run_app_shell() -> Result<(), BootstrapError> {
     let app = ZvimApp::bootstrap()?;
     let report = app.render_boot_report();
+    let launch_error = Rc::new(RefCell::new(None));
 
-    Application::new().run(move |cx| {
+    Application::new().run({
+        let launch_error = Rc::clone(&launch_error);
         let report = report.clone();
-        cx.open_window(WindowOptions::default(), |_window, cx| {
-            cx.new(|_| RootView::new(report))
-        })
-        .expect("failed to open ZVIM window");
+        move |cx| {
+            if let Err(error) = cx.open_window(WindowOptions::default(), |_window, cx| {
+                cx.new(|_| RootView::new(report.clone()))
+            }) {
+                *launch_error.borrow_mut() = Some(BootstrapError::UiLaunch(error.to_string()));
+                cx.quit();
+            }
+        }
     });
+
+    if let Some(error) = launch_error.borrow_mut().take() {
+        return Err(error);
+    }
 
     Ok(())
 }

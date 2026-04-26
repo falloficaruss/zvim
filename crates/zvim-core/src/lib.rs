@@ -3,10 +3,10 @@
 pub mod config;
 
 pub use config::{
-    ConfigLayer, ConfigLoadError, ConfigScope, EditorSettings, EditorSettingsPatch,
-    GitSettings, GitSettingsPatch, KeymapSettings, KeymapSettingsPatch, LanguageSettings,
-    LanguageSettingsPatch, LspSettings, LspSettingsPatch, PanelDockPosition, ResolvedSettings,
-    Settings, SettingsStore, ThemeSettings, ThemeSettingsPatch, UiSettings, UiSettingsPatch,
+    ConfigLayer, ConfigLoadError, ConfigScope, EditorSettings, EditorSettingsPatch, GitSettings,
+    GitSettingsPatch, KeymapSettings, KeymapSettingsPatch, LanguageSettings, LanguageSettingsPatch,
+    LspSettings, LspSettingsPatch, PanelDockPosition, ResolvedSettings, Settings, SettingsStore,
+    ThemeSettings, ThemeSettingsPatch, UiSettings, UiSettingsPatch,
 };
 
 /// Product-wide latency goals to keep performance visible in the architecture.

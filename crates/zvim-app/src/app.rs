@@ -86,6 +86,7 @@ impl ZvimApp {
                 "editor.command_budget_ms = {}",
                 self.session.editor.budget.command_ms
             ),
+            format!("lsp.runtime_state = {}", self.session.lsp.state()),
             format!("lsp.runtime_ready = {}", self.session.lsp.is_ready()),
         ]
         .join("\n")
@@ -148,6 +149,7 @@ pub fn discover_config_paths(workspace_root: &Path) -> ConfigPaths {
 #[derive(Debug)]
 pub enum BootstrapError {
     Config(ConfigLoadError),
+    UiLaunch(String),
 }
 
 impl From<ConfigLoadError> for BootstrapError {
@@ -160,6 +162,7 @@ impl std::fmt::Display for BootstrapError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::Config(error) => write!(f, "{error}"),
+            Self::UiLaunch(message) => write!(f, "failed to launch UI: {message}"),
         }
     }
 }
@@ -168,6 +171,7 @@ impl std::error::Error for BootstrapError {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         match self {
             Self::Config(error) => Some(error),
+            Self::UiLaunch(_) => None,
         }
     }
 }
@@ -181,7 +185,10 @@ mod tests {
         let root = Path::new("/tmp/example");
         let paths = discover_config_paths(root);
 
-        assert_eq!(paths.workspace, PathBuf::from("/tmp/example/.zvim/settings.toml"));
+        assert_eq!(
+            paths.workspace,
+            PathBuf::from("/tmp/example/.zvim/settings.toml")
+        );
         assert_eq!(paths.project, PathBuf::from("/tmp/example/zvim.toml"));
     }
 
@@ -191,7 +198,10 @@ mod tests {
         let session = AppSession {
             workspace: WorkspaceState::new(
                 PathBuf::from("/tmp/example"),
-                vec![(ConfigScope::Workspace, PathBuf::from("/tmp/example/.zvim/settings.toml"))],
+                vec![(
+                    ConfigScope::Workspace,
+                    PathBuf::from("/tmp/example/.zvim/settings.toml"),
+                )],
                 settings,
             ),
             editor: EditorEngine::new(),
@@ -202,6 +212,7 @@ mod tests {
         let report = app.render_boot_report();
 
         assert!(report.contains("loaded_layers = Workspace:/tmp/example/.zvim/settings.toml"));
-        assert!(report.contains("lsp.runtime_ready = true"));
+        assert!(report.contains("lsp.runtime_state = not_started"));
+        assert!(report.contains("lsp.runtime_ready = false"));
     }
 }

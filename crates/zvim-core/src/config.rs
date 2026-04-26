@@ -45,7 +45,12 @@ pub enum ConfigLoadError {
         source: std::io::Error,
     },
     ParseToml {
+        path: Option<String>,
         source: toml::de::Error,
+    },
+    Invalid {
+        path: Option<String>,
+        message: String,
     },
 }
 
@@ -53,7 +58,7 @@ impl ConfigLoadError {
     pub fn path(&self) -> Option<&str> {
         match self {
             Self::Read { path, .. } => Some(path.as_str()),
-            Self::ParseToml { .. } => None,
+            Self::ParseToml { path, .. } | Self::Invalid { path, .. } => path.as_deref(),
         }
     }
 
@@ -66,13 +71,48 @@ impl ConfigLoadError {
             } if source.kind() == std::io::ErrorKind::NotFound
         )
     }
+
+    fn with_path(self, path: impl Into<String>) -> Self {
+        let path = path.into();
+        match self {
+            Self::Read { path, source } => Self::Read { path, source },
+            Self::ParseToml {
+                path: existing,
+                source,
+            } => Self::ParseToml {
+                path: existing.or(Some(path)),
+                source,
+            },
+            Self::Invalid {
+                path: existing,
+                message,
+            } => Self::Invalid {
+                path: existing.or(Some(path)),
+                message,
+            },
+        }
+    }
 }
 
 impl std::fmt::Display for ConfigLoadError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::Read { path, source } => write!(f, "failed to read config file {path}: {source}"),
-            Self::ParseToml { source } => write!(f, "failed to parse TOML config: {source}"),
+            Self::ParseToml {
+                path: Some(path),
+                source,
+            } => write!(f, "failed to parse TOML config {path}: {source}"),
+            Self::ParseToml { path: None, source } => {
+                write!(f, "failed to parse TOML config: {source}")
+            }
+            Self::Invalid {
+                path: Some(path),
+                message,
+            } => write!(f, "invalid config in {path}: {message}"),
+            Self::Invalid {
+                path: None,
+                message,
+            } => write!(f, "invalid config: {message}"),
         }
     }
 }
@@ -81,7 +121,8 @@ impl std::error::Error for ConfigLoadError {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         match self {
             Self::Read { source, .. } => Some(source),
-            Self::ParseToml { source } => Some(source),
+            Self::ParseToml { source, .. } => Some(source),
+            Self::Invalid { .. } => None,
         }
     }
 }
@@ -174,7 +215,10 @@ impl Settings {
     }
 
     pub fn from_toml_str(input: &str) -> Result<Self, ConfigLoadError> {
-        toml::from_str(input).map_err(|source| ConfigLoadError::ParseToml { source })
+        let settings: Self = toml::from_str(input)
+            .map_err(|source| ConfigLoadError::ParseToml { path: None, source })?;
+        settings.validate()?;
+        Ok(settings)
     }
 
     pub fn load_toml_from_path<P: AsRef<Path>>(path: P) -> Result<Self, ConfigLoadError> {
@@ -183,7 +227,79 @@ impl Settings {
             path: path.display().to_string(),
             source,
         })?;
-        Self::from_toml_str(&contents)
+        Self::from_toml_str(&contents).map_err(|error| error.with_path(path.display().to_string()))
+    }
+
+    pub fn validate(&self) -> Result<(), ConfigLoadError> {
+        if let Some(editor) = &self.editor {
+            validate_optional_tab_size(editor.tab_size, "editor.tab_size")?;
+        }
+
+        if let Some(ui) = &self.ui {
+            if let Some(theme) = &ui.theme {
+                validate_optional_non_empty_string(
+                    theme.font_family.as_deref(),
+                    "ui.theme.font_family",
+                )?;
+                validate_optional_positive_u16(theme.font_size_px, "ui.theme.font_size_px")?;
+                validate_optional_positive_u16(
+                    theme.line_height_percent,
+                    "ui.theme.line_height_percent",
+                )?;
+            }
+        }
+
+        if let Some(keymap) = &self.keymap {
+            validate_optional_non_empty_string(keymap.leader_key.as_deref(), "keymap.leader_key")?;
+            validate_optional_positive_u16(keymap.chord_timeout_ms, "keymap.chord_timeout_ms")?;
+        }
+
+        if let Some(git) = &self.git {
+            validate_optional_positive_u16(git.auto_refresh_ms, "git.auto_refresh_ms")?;
+        }
+
+        for (language, patch) in &self.languages {
+            validate_optional_non_empty_string(
+                patch.formatter.as_deref(),
+                &format!("languages.{language}.formatter"),
+            )?;
+            validate_optional_tab_size(patch.tab_size, &format!("languages.{language}.tab_size"))?;
+        }
+
+        Ok(())
+    }
+}
+
+fn invalid_config(message: impl Into<String>) -> ConfigLoadError {
+    ConfigLoadError::Invalid {
+        path: None,
+        message: message.into(),
+    }
+}
+
+fn validate_optional_tab_size(value: Option<u8>, field: &str) -> Result<(), ConfigLoadError> {
+    match value {
+        Some(0) => Err(invalid_config(format!("{field} must be greater than 0"))),
+        _ => Ok(()),
+    }
+}
+
+fn validate_optional_positive_u16(value: Option<u16>, field: &str) -> Result<(), ConfigLoadError> {
+    match value {
+        Some(0) => Err(invalid_config(format!("{field} must be greater than 0"))),
+        _ => Ok(()),
+    }
+}
+
+fn validate_optional_non_empty_string(
+    value: Option<&str>,
+    field: &str,
+) -> Result<(), ConfigLoadError> {
+    match value {
+        Some(value) if value.trim().is_empty() => {
+            Err(invalid_config(format!("{field} must not be empty")))
+        }
+        _ => Ok(()),
     }
 }
 
@@ -787,10 +903,7 @@ mod tests {
         assert_eq!(editor.tab_size, Some(2));
         assert_eq!(editor.soft_wrap, Some(true));
         assert_eq!(ui.sidebar_visible, Some(false));
-        assert_eq!(
-            ui.theme.and_then(|theme| theme.font_size_px),
-            Some(16)
-        );
+        assert_eq!(ui.theme.and_then(|theme| theme.font_size_px), Some(16));
         assert_eq!(rust.formatter.as_deref(), Some("rustfmt"));
         assert_eq!(rust.format_on_save, Some(true));
     }
@@ -817,5 +930,37 @@ mod tests {
         assert_eq!(resolved.editor.tab_size, 2);
         assert!(resolved.git.inline_blame);
         assert!(resolved.git.inline_diff);
+    }
+
+    #[test]
+    fn invalid_editor_tab_size_is_rejected() {
+        let error = Settings::from_toml_str(
+            r#"
+            [editor]
+            tab_size = 0
+            "#,
+        )
+        .expect_err("invalid settings should fail");
+
+        assert_eq!(error.path(), None);
+        assert_eq!(
+            error.to_string(),
+            "invalid config: editor.tab_size must be greater than 0"
+        );
+    }
+
+    #[test]
+    fn parse_errors_loaded_from_path_include_path_context() {
+        let path =
+            std::env::temp_dir().join(format!("zvim-invalid-config-{}.toml", std::process::id()));
+        fs::write(&path, "[editor\n tab_size = 4").expect("write invalid settings");
+
+        let error = Settings::load_toml_from_path(&path).expect_err("invalid TOML should fail");
+        let path_str = path.to_string_lossy().into_owned();
+
+        assert_eq!(error.path(), Some(path_str.as_str()));
+        assert!(error.to_string().contains(path_str.as_str()));
+
+        fs::remove_file(path).expect("cleanup temp config");
     }
 }

@@ -13,4 +13,3 @@ impl EditorEngine {
         Self::default()
     }
 }
-

@@ -1,1 +1,0 @@
-/root/zvim/target/debug/libzvim_app.rlib: /root/zvim/crates/zvim-app/src/app.rs /root/zvim/crates/zvim-app/src/lib.rs /root/zvim/crates/zvim-core/src/config.rs /root/zvim/crates/zvim-core/src/lib.rs /root/zvim/crates/zvim-editor/src/lib.rs /root/zvim/crates/zvim-lsp/src/lib.rs
